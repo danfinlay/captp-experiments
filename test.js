@@ -1,62 +1,54 @@
 const test = require('tape')
 const { E, harden, makeCapTP } = require('@agoric/captp');
 
-test('try loopback captp', async t => {
+test('pizza ordering example', async t => {
+  /*
+  * Let's say a customer wants to say "What's your largest pizza? GIMME THAT!"
+  * In a single request, from a pizza service.
+  * 
+  * In this example, we're going to have two capTp instances: customer, and pizzeria.
+  */
 
   try {
     const debug = false;
-    let rightDispatch;
-    const { dispatch: leftDispatch, getBootstrap: leftBootstrap } = makeCapTP(
-      'left',
+    let pizzeriaDispatch;
+
+    // CREATE THE CUSTOMER:
+    const { dispatch: customerDispatch, getBootstrap: pizzeriaBootstrap } = makeCapTP(
+      'customer',
       obj => {
         if (debug) {
-          console.log('toRight', obj);
+          console.log('to pizzeria:', obj);
         }
-        rightDispatch(obj);
+        pizzeriaDispatch(obj);
       },
     );
-    const pr = {};
-    pr.p = new Promise((resolve, reject) => {
-      pr.res = resolve;
-      pr.rej = reject;
-    });
-    ({ dispatch: rightDispatch } = makeCapTP(
+
+    // CREATE THE PIZZERIA:
+    ({ dispatch: pizzeriaDispatch } = makeCapTP(
       'right',
       obj => {
         if (debug) {
-          console.log('toLeft', obj);
+          console.log('to customer:', obj);
         }
-        leftDispatch(obj);
+        customerDispatch(obj);
       },
       harden({
-        promise: pr.p,
-        encourager: {
-          encourage(name) {
-            const bang = new Promise(resolve => {
-              setTimeout(
-                () =>
-                  resolve({
-                    trigger() {
-                      return `${name} BANG!`;
-                    },
-                  }),
-                200,
-              );
-            });
-            return { comment: `good work, ${name}`, bang };
-          },
-        },
+        getPizzaSizes: async () => ['smallza', 'mediumoni', 'largiosa'],
+        orderPizza: async (size) => { return { cooking: true, size } },
       }),
     ));
-    const rightRef = leftBootstrap();
-    const { comment, bang } = await E.C(rightRef).G.encourager.M.encourage(
-      'buddy',
-    ).P;
-    t.equal(comment, 'good work, buddy', 'got encouragement');
-    t.equal(await E(bang).trigger(), 'buddy BANG!', 'called on promise');
-    pr.res('resolution');
-    t.equal(await E.G(rightRef).promise, 'resolution', 'got resolution');
-    t.equal(await E.C(rightRef).G.promise.P, 'resolution', 'chained resolution');
+
+    // THE TESTS:
+    const pizzeriaRef = pizzeriaBootstrap();
+    const { cooking, size } = await E(pizzeriaRef).getPizzaSizes()
+      .then(sizes => sizes[sizes.length - 1])
+      .then(E(pizzeriaRef).orderPizza)
+
+    t.ok(cooking, 'is cooking')
+    t.equal(size, 'largiosa', 'the biggest kind')
+
+  // HANDLE ERRORS:
   } catch (e) {
     t.isNot(e, e, 'unexpected exception');
   } finally {
